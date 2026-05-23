@@ -214,54 +214,62 @@ void MainWindow::updateSidebarUI() {
         listItem->setData(Qt::UserRole + 2, list[i].day);
     }
 }
-
-void MainWindow::on_listWidgetSidebar_itemClicked(QListWidgetItem *item)
-{
+//
+// 当点击侧边栏的某条日程时，主日历自动反向跳转并聚焦到这一天
+void MainWindow::on_listWidgetSidebar_itemClicked(QListWidgetItem *item) {
     if (!item) return;
-
+    
+    // 取出刚才隐式存在里面的年月日数据
     int y = item->data(Qt::UserRole).toInt();
     int m = item->data(Qt::UserRole + 1).toInt();
     int d = item->data(Qt::UserRole + 2).toInt();
 
-    cal->updateDate(y, m);
-    updateCalendarUI();
+    cal->updateDate(y, m); // 让日历核心逻辑跳转到这一年这一月
+    updateCalendarUI();    // 刷新整个日历大网格
 
+    // 重新推算这一天在 7x6 单元格矩阵中的精确行号和列号
     int firstDay = cal->getFirstDayOfWeek() % 7;
-    int targetIndex = firstDay + d - 1;
-    int row = targetIndex / 7;
-    int col = targetIndex % 7;
-    ui->tableWidget->setCurrentCell(row, col);
-    ui->tableWidget->setFocus();
+    int targetIndex = firstDay + d - 1; // 目标一维索引
+    int row = targetIndex / 7;          // 换算成二维网格行号
+    int col = targetIndex % 7;          // 换算成二维网格列号
+
+    ui->tableWidget->setCurrentCell(row, col); // 将当前高亮选中单元格直接定位到那一天
+    ui->tableWidget->setFocus();               // 强制让日历表获取焦点，产生视觉选中框
 }
 
-// 翻页与跳转保持原样，它们会自动触发 updateCalendarUI() 从而更新侧边栏
-void MainWindow::on_btnPrev_clicked()
-{
+// “上一月”按钮点击事件
+void MainWindow::on_btnPrev_clicked() {
     int y = cal->getYear();
     int m = cal->getMonth() - 1;
-    if (m < 1) { m = 12; y--; }
-    if (y < 1901) { QMessageBox::information(this, "提示", "已经到达系统支持的最小年份 (1901年)。"); return; }
+    if (m < 1) { m = 12; y--; } // 跨年递减处理
+    if (y < 1901) {
+        QMessageBox::information(this, "提示", "已经到达系统支持的最小年份 (1901年)。");
+        return;
+    }
     cal->updateDate(y, m);
-    updateCalendarUI();
+    updateCalendarUI(); // 内部联动触发侧边栏更新
 }
 
-void MainWindow::on_btnNext_clicked()
-{
+// “下一月”按钮点击事件
+void MainWindow::on_btnNext_clicked() {
     int y = cal->getYear();
     int m = cal->getMonth() + 1;
-    if (m > 12) { m = 1; y++; }
-    if (y > 2099) { QMessageBox::information(this, "提示", "已经到达系统支持的最大年份 (2099年)。"); return; }
+    if (m > 12) { m = 1; y++; } // 跨年递增处理
+    if (y > 2099) {
+        QMessageBox::information(this, "提示", "已经到达系统支持的最大年份 (2099年)。");
+        return;
+    }
     cal->updateDate(y, m);
     updateCalendarUI();
 }
 
-void MainWindow::on_btnJump_clicked()
-{
+// “跳转年月”自由输入跳转
+void MainWindow::on_btnJump_clicked() {
     bool ok;
+    // 弹出标准文本框让用户录入形如 "2026 5"
     QString text = QInputDialog::getText(this, "跳转年月", "请输入年份和月份 (如: 2026 5)\n支持范围: 1901 - 2099:", QLineEdit::Normal, "", &ok);
-
     if (ok && !text.isEmpty()) {
-        QStringList parts = text.split(" ", Qt::SkipEmptyParts);
+        QStringList parts = text.split(" ", Qt::SkipEmptyParts); // 以空格分割
         if (parts.size() >= 2) {
             int y = parts[0].toInt();
             int m = parts[1].toInt();
@@ -275,39 +283,48 @@ void MainWindow::on_btnJump_clicked()
             } else {
                 QMessageBox::warning(this, "错误", "月份必须在 1 到 12 之间！");
             }
-        } else { QMessageBox::warning(this, "错误", "格式错误！请使用空格分隔年份和月份。"); }
+        } else {
+            QMessageBox::warning(this, "错误", "格式错误！请使用空格分隔年份和月份。");
+        }
     }
 }
-void MainWindow::on_tableWidget_cellDoubleClicked(int row, int column)
-{
+
+// 双击某天日历格，拉起备忘录管理器模态框
+void MainWindow::on_tableWidget_cellDoubleClicked(int row, int column) {
     QTableWidgetItem* item = ui->tableWidget->item(row, column);
     if (!item) return;
-
     QString text = item->text();
-    if (text.isEmpty()) return;
+    if (text.isEmpty()) return; // 空格子（上月残留或下月开头空位）不作响应
 
-    QString dayStr = text.split("\n")[0];
-    dayStr.remove(QRegularExpression("[^0-9]"));
+    // 1. 提取被点击格子里的公历数字日子
+    QString dayStr = text.split("\n")[0]; // 切割取第一行
+    dayStr.remove(QRegularExpression("[^0-9]")); // 正则剔除可能自带的 "★" 等干扰符号
     int day = dayStr.toInt();
     if (day < 1 || day > 31) return;
 
     int y = cal->getYear();
     int m = cal->getMonth();
 
+    // 2. 动态用代码构建一个微型弹出对话框 (QDialog)
     QDialog dialog(this);
     dialog.setWindowTitle(QString("%1年%2月%3日 备忘录管理").arg(y).arg(m).arg(day));
     dialog.resize(350, 400);
 
+    // 3. 为对话框组装布局与控件
     QVBoxLayout* mainLayout = new QVBoxLayout(&dialog);
-    QListWidget* listWidget = new QListWidget(&dialog);
+    QListWidget* listWidget = new QListWidget(&dialog); // 备忘录条目展示列表
     mainLayout->addWidget(listWidget);
 
+    // 4. 如果今天有数据，读出来并切割填充到列表里展示
     if (memoMgr->hasMemo(y, m, day)) {
         QString currentMemo = QString::fromStdString(memoMgr->getMemo(y, m, day));
         QStringList memos = currentMemo.split("；", Qt::SkipEmptyParts);
-        for(const QString& memoStr : memos) { listWidget->addItem(memoStr); }
+        for(const QString& memoStr : memos) {
+            listWidget->addItem(memoStr);
+        }
     }
 
+    // 5. 组合底部的输入和按钮控件
     QHBoxLayout* inputLayout = new QHBoxLayout();
     QLineEdit* inputEdit = new QLineEdit(&dialog);
     QPushButton* btnAdd = new QPushButton("添加", &dialog);
@@ -322,18 +339,35 @@ void MainWindow::on_tableWidget_cellDoubleClicked(int row, int column)
     actionLayout->addWidget(btnSave);
     mainLayout->addLayout(actionLayout);
 
+    // 6. 槽函数绑定 (Lambda 表达式闭包写法，高效轻量)
+    // 【添加条目】：点击添加时将输入框文本插入列表组件
     connect(btnAdd, &QPushButton::clicked, [&]() {
         QString newText = inputEdit->text().trimmed();
-        if(!newText.isEmpty()) { listWidget->addItem(newText); inputEdit->clear(); }
+        if(!newText.isEmpty()) {
+            listWidget->addItem(newText);
+            inputEdit->clear();
+        }
     });
-    connect(btnDelete, &QPushButton::clicked, [&]() { qDeleteAll(listWidget->selectedItems()); });
+
+    // 【删除条目】：点击删除选中的条目
+    connect(btnDelete, &QPushButton::clicked, [&]() {
+        qDeleteAll(listWidget->selectedItems()); // 批量安全释放并移除选中的子项
+    });
+
+    // 【确认关闭】：点击保存时使对话框发出 Accept 信号关闭
     connect(btnSave, &QPushButton::clicked, &dialog, &QDialog::accept);
 
+    // 7. 【阻塞式开启模态框】：等待用户操作
     if (dialog.exec() == QDialog::Accepted) {
+        // 先彻底清空这一天原本的备忘录旧数据
         memoMgr->deleteMemo(y, m, day);
+        
+        // 循环把列表中留存的备忘录单项逐个读出，通过 addMemo 拼装保存
         for(int i = 0; i < listWidget->count(); ++i) {
             memoMgr->addMemo(y, m, day, listWidget->item(i)->text().toStdString());
         }
+        
+        // 数据写入完毕，全局刷新主日历网格（会补上或去掉小星星 ★）
         updateCalendarUI();
     }
 }
