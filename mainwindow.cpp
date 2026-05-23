@@ -1,52 +1,55 @@
-#include "mainwindow.h"
-#include "ui_mainwindow.h"
-#include <QTableWidgetItem>
-#include <QMessageBox>
-#include <QDialog>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QListWidget>
-#include <QPushButton>
-#include <QLineEdit>
-#include <QInputDialog>
-#include <QDate>      // 【核心引入】：用于计算日期差
-#include <ctime>
-#include <QString>
-#include <QStringList>
-#include <QRegularExpression>
-#include <vector>
-#include <algorithm>
+#include "mainwindow.h"       // 引入主窗口头文件
+#include "ui_mainwindow.h"    // 引入 Qt 自动生成的 UI 布局文件
+#include <QTableWidgetItem>   // 用于向表格控件单元格填入内容
+#include <QMessageBox>         // 用于弹出提示、警告对话框
+#include <QDialog>            // 用于创建自定义弹出对话框（备忘录管理）
+#include <QVBoxLayout>        // 垂直布局管理器
+#include <QHBoxLayout>        // 水平布局管理器
+#include <QListWidget>        // 列表控件，用于显示日程列表
+#include <QPushButton>        // 按钮控件
+#include <QLineEdit>          // 单行输入框控件
+#include <QInputDialog>       // 标准输入对话框（用于跳转年月）
+#include <QDate>              // 【核心引入】：Qt时间类，用于计算天数差（倒计时）
+#include <ctime>              // C标准时间库，用于获取系统当前时间
+#include <QString>            // Qt 字符串类
+#include <QStringList>        // Qt 字符串列表类（常用于切割字符串）
+#include <QRegularExpression> // 正则表达式类，用于过滤非数字字符
+#include <vector>             // 标准模板库容器，动态数组
+#include <algorithm>          // 标准算法库，包含 std::sort, std::min
 
-// 定义一个结构体，方便对近期的日程进行排序
+// 定义一个结构体，方便对近期的日程进行数据打包和排序
 struct UpcomingSchedule {
-    int year, month, day;
-    QString memoText;
-    int daysLeft;
+    int year, month, day;  // 日程对应的具体年月日
+    QString memoText;      // 备忘录的单条内容
+    int daysLeft;          // 距离今天还有几天（倒计时天数）
 };
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
-    , ui(new Ui::MainWindow)
-{
-    ui->setupUi(this);
 
+//====================构造与解析函数==========================================
+//
+MainWindow::MainWindow(QWidget *parent) 
+    : QMainWindow(parent), ui(new Ui::MainWindow) 
+{
+    ui->setupUi(this); // 初始化并构建由 Qt Designer 设计的 UI 界面
+
+    // 1. 获取系统当前时间，作为万年历启动时的默认显示日期
     time_t t = time(nullptr);
     tm* now = localtime(&t);
-    int currentYear = now->tm_year + 1900;
-    int currentMonth = now->tm_mon + 1;
+    int currentYear = now->tm_year + 1900; // tm_year 自 1900 年开始计算，需加 1900
+    int currentMonth = now->tm_mon + 1;    // tm_mon 范围是 0-11，需加 1
 
+    // 2. 实例化日历核心和备忘录管理器（数据文件定为 memos_data.txt）
     cal = new CalendarCore(currentYear, currentMonth);
     memoMgr = new MemoManager("memos_data.txt");
 
-    ui->tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    ui->tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    ui->tableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    ui->tableWidget->setFocusPolicy(Qt::NoFocus);
-    ui->tableWidget->setShowGrid(true);
+    // 3. 配置日历表格 (QTableWidget) 的基础行为
+    ui->tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers); // 禁用双击直接编辑单元格文本
+    ui->tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch); // 列宽自适应拉伸
+    ui->tableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Stretch);   // 行高自适应拉伸
+    ui->tableWidget->setFocusPolicy(Qt::NoFocus);  // 移除单元格被选中时的虚线框焦点
+    ui->tableWidget->setShowGrid(true);            // 显示日历网格线
 
-    // ==========================================
-    // UI 视觉美化引擎升级 (融入侧边栏样式)
-    // ==========================================
+    // 4. QSS 界面视觉美化引擎升级 (融入高端侧边栏和现代配色)
     QString styleSheet = R"(
         QMainWindow { background-color: #F5F7FA; }
         QLabel#labelTitle { font-size: 24px; font-weight: bold; color: #2C3E50; padding: 10px; }
@@ -56,85 +59,85 @@ MainWindow::MainWindow(QWidget *parent)
         QTableWidget { background-color: #FFFFFF; color: #303133; border: 1px solid #EBEEF5; border-radius: 8px; gridline-color: #F2F6FC; font-size: 15px; }
         QHeaderView::section { background-color: #F8F9FA; color: #909399; font-weight: bold; font-size: 16px; border: none; border-bottom: 2px solid #EBEEF5; padding: 8px; }
         QTableCornerButton::section { background-color: #F8F9FA; border: none; }
-
-        /* 侧边栏列表美化 */
-        QListWidget {
-            background-color: #FFFFFF;
-            border: 1px solid #EBEEF5;
-            border-radius: 8px;
-            padding: 5px;
-            color: #2C3E50;
-        }
-        QListWidget::item {
-            padding: 10px;
-            border-bottom: 1px solid #F2F6FC;
-        }
-        QListWidget::item:hover {
-            background-color: #F5F7FA;
-            border-radius: 4px;
-            color: #409EFF;
-        }
+    
+        QListWidget { background-color: #FFFFFF; border: 1px solid #EBEEF5; border-radius: 8px; padding: 5px; color: #2C3E50; }
+        QListWidget::item { padding: 10px; border-bottom: 1px solid #F2F6FC; }
+        QListWidget::item:hover { background-color: #F5F7FA; border-radius: 4px; color: #409EFF; }
     )";
-    this->setStyleSheet(styleSheet);
+    this->setStyleSheet(styleSheet); // 应用全局样式表
 
-    // 连接侧边栏的点击事件（利用了编译器的自动连接，或者在此手动连一次安全防漏）
+    // 5. 手动绑定侧边栏点击事件（防漏安全连接）
     connect(ui->listWidgetSidebar, &QListWidget::itemClicked, this, &MainWindow::on_listWidgetSidebar_itemClicked);
 
+    // 6. 首次渲染刷新日历界面
     updateCalendarUI();
 }
 
-MainWindow::~MainWindow()
-{
-    delete ui;
-    delete cal;
-    delete memoMgr;
+MainWindow::~MainWindow() {
+    delete ui;       // 销毁界面指针
+    delete cal;      // 释放日历核心内存
+    delete memoMgr;  // 释放备忘录核心内存（触发 MemoManager 析构，自动安全写入磁盘）
 }
-
-void MainWindow::updateCalendarUI()
-{
+//===============核心渲染:主日历网格刷新 (Lines 101-131)
+void MainWindow::updateCalendarUI() {
+    // 1. 更新顶部标题标签，形如 "2026 年 5 月"
     QString title = QString::number(cal->getYear()) + " 年 " + QString::number(cal->getMonth()) + " 月";
     ui->labelTitle->setText(title);
+
+    // 2. 清空日历表格上的所有内容
     ui->tableWidget->clearContents();
 
-    int firstDay = cal->getFirstDayOfWeek() % 7;
-    int days = cal->getDaysInMonth();
+    // 3. 计算本月第一天是星期几，决定从哪一个格子（哪一列）开始画数字
+    int firstDay = cal->getFirstDayOfWeek() % 7; 
+    int days = cal->getDaysInMonth(); // 获取当前月份总天数
     int row = 0;
-    int col = firstDay;
+    int col = firstDay; // 初始列定位到第一天对应的星期几
 
+    // 4. 循环填充每一天的日子
     for (int day = 1; day <= days; ++day) {
+        // 调用农历核心获取阴历字符串（如 "初一", "端午节"）
         std::string lunar = LunarCore::getLunarString(cal->getYear(), cal->getMonth(), day);
+        // 查询今天是否有备忘录
         bool hasMemo = memoMgr->hasMemo(cal->getYear(), cal->getMonth(), day);
 
+        // 拼接单元格文本：第一行公历数字，第二行农历文字
         QString cellText = QString::number(day) + "\n" + QString::fromStdString(lunar);
         if (hasMemo) {
-            cellText = "★ " + cellText;
+            cellText = "★ " + cellText; // 如果有备忘录，在前面打上瞩目的星星标记
         }
 
+        // 实例化单元格项，并设置居中对齐，填入表格中
         QTableWidgetItem* item = new QTableWidgetItem(cellText);
         item->setTextAlignment(Qt::AlignCenter);
         ui->tableWidget->setItem(row, col, item);
 
+        // 列坐标右移
         col++;
-        if (col > 6) { col = 0; row++; }
+        if (col > 6) { // 如果超过星期六（第7列），换行，列回到0（星期日）
+            col = 0;
+            row++;
+        }
     }
 
+    // 5. 主界面刷完后，同步触发侧边栏日程列表的更新
     updateSidebarUI();
 }
 
 // ==========================================
 // 亮点核心：倒计时与侧边栏动态聚合算法
 // ==========================================
-void MainWindow::updateSidebarUI()
-{
-    ui->listWidgetSidebar->clear();
-    QDate today = QDate::currentDate();
-    std::vector<UpcomingSchedule> list;
+void MainWindow::updateSidebarUI() {
+    ui->listWidgetSidebar->clear(); // 清空侧边栏日程列表
+    QDate today = QDate::currentDate(); // 获取当前系统精确的 QDate 日期
+    std::vector<UpcomingSchedule> list; // 暂存所有满足条件的未过期日程表
 
     int startYear = today.year();
+    // 遍历当前年及下一年（跨年覆盖），动态搜寻备忘录
     for (int y = startYear; y <= startYear + 1; ++y) {
         for (int m = 1; m <= 12; ++m) {
-            if (y < 1901 || y > 2099) continue;
+            if (y < 1901 || y > 2099) continue; // 越界安全检查
 
+            // 计算该月最大天数（考虑闰年平年）
             int maxDay = 31;
             if (m == 4 || m == 6 || m == 9 || m == 11) maxDay = 30;
             else if (m == 2) {
@@ -142,14 +145,17 @@ void MainWindow::updateSidebarUI()
             }
 
             for (int d = 1; d <= maxDay; ++d) {
-                if (memoMgr->hasMemo(y, m, d)) {
+                if (memoMgr->hasMemo(y, m, d)) { // 如果这天有备忘录
                     QDate memoDate(y, m, d);
-                    int daysLeft = today.daysTo(memoDate);
+                    int daysLeft = today.daysTo(memoDate); // 【核心算法】：计算今天到目标日期的天数差
 
-                    if (daysLeft >= 0) {
+                    if (daysLeft >= 0) { // 过滤掉已经过去的过期日程
+                        // 获取整段原始文本
                         QString rawMemo = QString::fromStdString(memoMgr->getMemo(y, m, d));
+                        // 按照中文分号“；”切割成多条独立的单项日程
                         QStringList memos = rawMemo.split("；", Qt::SkipEmptyParts);
-
+                        
+                        // 将每条日程打包存入 vector 容器
                         for (const QString& singleMemo : memos) {
                             UpcomingSchedule item = { y, m, d, singleMemo, daysLeft };
                             list.push_back(item);
@@ -159,6 +165,33 @@ void MainWindow::updateSidebarUI()
             }
         }
     }
+
+    // 【标准库 Lambda 排序】：按距离今天的倒计时天数从小到大（最近的排最前面）进行升序排序
+    std::sort(list.begin(), list.end(), [](const UpcomingSchedule& a, const UpcomingSchedule& b) {
+        return a.daysLeft < b.daysLeft;
+    });
+
+    // 限制侧边栏最多显示最近的 8 条日程，防止列表过长破坏美观
+    int showCount = std::min(8, (int)list.size());
+    for (int i = 0; i < showCount; ++i) {
+        QString displayStr = QString("[%1/%2] %3\n").arg(list[i].month).arg(list[i].day).arg(list[i].memoText);
+        
+        if (list[i].daysLeft == 0) {
+            displayStr += "⏰ 今天！"; // 0天说明就是今天
+        } else {
+            displayStr += QString("⏳ 倒计时 %1 天").arg(list[i].daysLeft);
+        }
+
+        // 创建列表子项，并塞入侧边栏控件
+        QListWidgetItem* listItem = new QListWidgetItem(displayStr, ui->listWidgetSidebar);
+        
+        // 【核心点】：使用 Qt 的 UserRole 隐藏存储该日程对应的真实年月日
+        // 这样即使界面上没显示年份，点击时也能精确提取
+        listItem->setData(Qt::UserRole, list[i].year);
+        listItem->setData(Qt::UserRole + 1, list[i].month);
+        listItem->setData(Qt::UserRole + 2, list[i].day);
+    }
+}
 
     std::sort(list.begin(), list.end(), [](const UpcomingSchedule& a, const UpcomingSchedule& b) {
         return a.daysLeft < b.daysLeft;
