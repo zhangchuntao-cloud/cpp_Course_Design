@@ -1,0 +1,3 @@
+D:\Document_profile\QT\Tools\CMake_64\bin\cmake.exe -E rm -f CMakeFiles\PRJ1.dir/objects.a
+D:\Document_profile\QT\Tools\mingw1310_64\bin\ar.exe qc CMakeFiles\PRJ1.dir/objects.a @CMakeFiles\PRJ1.dir\objects1.rsp
+D:\Document_profile\QT\Tools\mingw1310_64\bin\g++.exe -g -mwindows -Wl,--whole-archive CMakeFiles\PRJ1.dir/objects.a -Wl,--no-whole-archive -o PRJ1.exe -Wl,--out-implib,libPRJ1.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\PRJ1.dir\linkLibs.rsp
